@@ -106,6 +106,8 @@ class RealCamera:
         from vilib import Vilib
 
         Vilib.camera_start(vflip=False, hflip=False)
+        # MJPEG stream at http://<pi-ip>:9000/mjpg
+        Vilib.display(local=False, web=True)
 
     def close(self) -> None:
         from vilib import Vilib
