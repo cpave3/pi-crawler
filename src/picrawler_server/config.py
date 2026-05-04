@@ -17,3 +17,5 @@ PIPER_URL = os.environ.get("PIPER_URL", "").rstrip("/")
 PIPER_VOICE = os.environ.get("PIPER_VOICE", "")
 PIPER_MODE = os.environ.get("PIPER_MODE", "json")
 PIPER_PREBUFFER_MS = int(os.environ.get("PIPER_PREBUFFER_MS", "500"))
+
+MIC_DEVICE = os.environ.get("PICRAWLER_MIC_DEVICE", "")

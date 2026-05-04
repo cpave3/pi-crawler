@@ -13,7 +13,7 @@ import time
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..auth import require_token
-from ..config import MOCK, PIPER_URL
+from ..config import MIC_DEVICE, MOCK, PIPER_URL
 from ..models import ActionResult, ListenRequest, ListenResult, SayRequest, SoundRequest
 from ..tts import speak_via_piper
 
@@ -77,9 +77,14 @@ async def listen(req: ListenRequest) -> ListenResult:
                 w.setframerate(16000)
                 w.writeframes(b"\x00\x00" * int(16000 * req.duration_seconds))
         else:
-            cmd = ["arecord", "-q", "-f", "cd", "-t", "wav", "-d", str(int(req.duration_seconds))]
-            if req.device:
-                cmd += ["-D", req.device]
+            cmd = [
+                "arecord", "-q",
+                "-f", "S16_LE", "-r", "16000", "-c", "1",
+                "-t", "wav", "-d", str(int(req.duration_seconds)),
+            ]
+            device = req.device or MIC_DEVICE
+            if device:
+                cmd += ["-D", device]
             cmd.append(path)
             await asyncio.to_thread(
                 subprocess.run, cmd, check=True,
@@ -94,8 +99,15 @@ async def listen(req: ListenRequest) -> ListenResult:
             bytes=len(data),
             duration_seconds=req.duration_seconds,
         )
+    except FileNotFoundError:
+        raise HTTPException(
+            500, "arecord not found. Install with: sudo apt install alsa-utils"
+        )
+    except subprocess.TimeoutExpired:
+        raise HTTPException(500, "arecord timed out")
     except subprocess.CalledProcessError as e:
-        raise HTTPException(500, f"arecord failed: {e.stderr.decode(errors='replace')[:500]}")
+        stderr = e.stderr.decode(errors="replace")[:500] if e.stderr else "(no stderr)"
+        raise HTTPException(500, f"arecord failed (exit {e.returncode}): {stderr}")
     finally:
         if os.path.exists(path):
             os.remove(path)

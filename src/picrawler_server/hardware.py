@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import pathlib
+import signal
 import time
 from typing import Protocol
 
@@ -81,13 +82,24 @@ class MockTTS:
         log.info(f"[mock] tts.say({text!r})")
 
 
+class _SonarTimeout(Exception):
+    pass
+
+
+def _sonar_alarm_handler(signum, frame):  # noqa: ARG001
+    raise _SonarTimeout()
+
+
 class RealCrawler:
-    """Wraps picrawler.Picrawler."""
+    """Wraps picrawler.Picrawler plus a robot_hat.Ultrasonic sonar (D2/D3)."""
 
     def __init__(self) -> None:
         from picrawler import Picrawler
+        from robot_hat import Pin, Ultrasonic
 
         self._hw = Picrawler()
+        self._sonar = Ultrasonic(Pin("D2"), Pin("D3"))
+        signal.signal(signal.SIGALRM, _sonar_alarm_handler)
 
     def do_action(self, name: str, steps: int, speed: int) -> None:
         self._hw.do_action(name, steps, speed)
@@ -95,8 +107,31 @@ class RealCrawler:
     def do_step(self, name: str, speed: int) -> None:
         self._hw.do_step(name, speed)
 
-    def get_distance(self) -> float:
-        return float(self._hw.get_distance())
+    def _read_once(self, timeout_s: int = 1) -> float | None:
+        try:
+            signal.alarm(timeout_s)
+            d = self._sonar.read()
+            signal.alarm(0)
+            return float(d) if d is not None else None
+        except _SonarTimeout:
+            signal.alarm(0)
+            return None
+        except Exception:
+            signal.alarm(0)
+            return None
+
+    def get_distance(self, samples: int = 5, gap_s: float = 0.03) -> float:
+        """Median-filtered ultrasonic read in cm. Returns -1.0 on total failure."""
+        vals: list[float] = []
+        for _ in range(samples):
+            d = self._read_once()
+            if d is not None and d > 0:
+                vals.append(d)
+            time.sleep(gap_s)
+        if not vals:
+            return -1.0
+        vals.sort()
+        return vals[len(vals) // 2]
 
 
 class RealCamera:
